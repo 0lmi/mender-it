@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # The script is developed to automate Mender production server setup
-# It's fully based on official documentation and tested on 1.5 release
+# It's fully based on official documentation
 # https://docs.mender.io/1.5/administration/production-installation
+# Currently tested on Ubuntu 16.04 and Mender 1.5.0
 # @author alex@olmi
 
 set -e
@@ -17,22 +18,23 @@ export CERT_STORAGE_CN=s3.mender.it
 USER_NAME=myusername@host.com
 USER_PASSWORD=mysecretpassword
 
-cd $HOME
+cd /opt
 
 # install required software
 echo -e "\n>> Installing required software...\n"
-set +e
-sudo apt-get remove -y docker docker-engine docker.io
-set -e
 sudo apt-get update
 sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common pwgen git
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
 sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
 sudo apt-get update
 sudo apt-get install -y docker-ce
-sudo usermod -aG docker $(whoami)
 sudo curl -L https://github.com/docker/compose/releases/download/1.21.2/docker-compose-$(uname -s)-$(uname -m) -o /usr/local/bin/docker-compose
 sudo chmod +x /usr/local/bin/docker-compose
+
+# add user to docker group if it's initial instance setup
+if [ "$(ls -1 /home | wc -l)" -eq 1 ] && [[ $- != *i* ]]; then
+    sudo usermod -aG docker $(ls -1 /home)
+fi
 
 # clone git repo
 echo -e "\n>> Clonning git repo...\n"
@@ -80,11 +82,11 @@ EXIT_CODE=-1
 START_TIME=$(date +%s)
 set +e
 while [ $COUNT -gt 0 ]; do
-  if curl -k -I https://${CERT_API_CN}/ui/ 2>/dev/null | grep -E ^HTTP | cut -d' ' -f2 > $SOUT; then
-    [ "$(cat $SOUT)" == "200" ] && { EXIT_CODE=0; sleep 5; break; }
-  fi
-  sleep 2
-  let COUNT=${COUNT}-1
+    if curl -k -I https://127.0.0.1/ui/ 2>/dev/null | grep -E ^HTTP | cut -d' ' -f2 > $SOUT; then
+        [ "$(cat $SOUT)" == "200" ] && { EXIT_CODE=0; sleep 5; break; }
+    fi
+    sleep 2
+    let COUNT=${COUNT}-1
 done
 set -e
 rm -f $SOUT
@@ -94,7 +96,6 @@ DURATION=$(($END_TIME - $START_TIME))
 
 # create user in Mender application
 echo -e "\n>> Creating user...\n"
-sudo ./run exec mender-useradm /usr/bin/useradm create-user --username=$USER_NAME --password=$USER_PASSWORD
+sudo ./run exec -T mender-useradm /usr/bin/useradm create-user --username=$USER_NAME --password=$USER_PASSWORD
 
 echo -e "\n>> Done!\n"
-
